@@ -105,7 +105,8 @@ With the freePageReporting enabled for the VM the hypervisor only needs assign h
 is actually using, however if the VM decides to fill it to its max for caching it defeats the point.
 
 We create a systemd unit to write '1' to /proc/sys/vm/drop_caches every few minutes to drop the existing
-memory caches, which keeps the cache on the host low. 
+memory caches, which minimised the amount of memory wasted on cache inside the VM, and thus allows the
+hypervisor to reclaim it thanks to freePageCaching.
 
 `/usr/local/sbin/reclaim-cache` (mode 755):
 
