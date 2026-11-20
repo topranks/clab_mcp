@@ -296,8 +296,48 @@ def _resolve_topology(topologyPath: str):
     return norm, m.group(1)
 
 
+def _lifecycle_params(path: str, maxWorkers: Optional[int] = None,
+                      nodeFilter: Optional[str] = None, timeout: Optional[str] = None) -> dict:
+    """Build and validate the optional query parameters shared by deploy and apply."""
+    params = {"path": path}
+    if maxWorkers is not None:
+        if not 1 <= maxWorkers <= 64:
+            raise ValueError("maxWorkers must be between 1 and 64")
+        params["maxWorkers"] = str(maxWorkers)
+    if nodeFilter:
+        nodes = [n.strip() for n in nodeFilter.split(",") if n.strip()]
+        if not nodes or not all(LAB_NAME_RE.match(n) for n in nodes):
+            raise ValueError("nodeFilter must be a comma-separated list of node names")
+        params["nodeFilter"] = ",".join(nodes)
+    if timeout:
+        if not DURATION_RE.match(timeout):
+            raise ValueError("timeout must be a duration like 10m or 1h (at most 2h)")
+        params["timeout"] = timeout
+    return params
+
+
+def _http_timeout(timeout: Optional[str]) -> int:
+    """How long to wait for the API: the containerlab timeout plus a margin."""
+    if not timeout:
+        return 900
+    n, unit = int(timeout[:-1]), timeout[-1]
+    return n * {"s": 1, "m": 60, "h": 3600}[unit] + 120
+
+
+def _post_lifecycle(lab: str, action: str, params: dict, timeout: Optional[str]):
+    client._ensure_auth()
+    return client.session.post(
+        f"{client.base_url}/api/v1/labs/{lab}/{action}",
+        headers={"Authorization": f"Bearer {client.token}"},
+        params=params,
+        timeout=_http_timeout(timeout),
+    )
+
+
 @mcp.tool()
-def deployLabFile(topologyPath: str, reconfigure: bool = False) -> str:
+def deployLabFile(topologyPath: str, reconfigure: bool = False,
+                  maxWorkers: Optional[int] = None, nodeFilter: Optional[str] = None,
+                  timeout: Optional[str] = None) -> str:
     """Deploy a lab from a topology file already in the workspace.
 
     topologyPath is relative to the workspace (the agent's working directory),
@@ -305,23 +345,50 @@ def deployLabFile(topologyPath: str, reconfigure: bool = False) -> str:
     file's directory, so startup configs and bind paths resolve relative to
     it, and no copy of the topology is written. The lab name is taken from
     the file's top-level `name:`. Set reconfigure=true to redeploy.
+
+    Optional:
+      maxWorkers: limit how many nodes are created in parallel (like
+        containerlab --max-workers), e.g. 2 for labs with several heavy
+        VM-based nodes such as vJunos.
+      nodeFilter: comma-separated node names to deploy, e.g. "pe1,p".
+        Links to nodes left out are dropped, and a vJunos node with no data
+        links never brings its FPC online.
+      timeout: containerlab timeout as a duration, e.g. "30m" (at most 2h;
+        the API default is 5m).
+    To add nodes to a running lab without redeploying it, use applyLabFile.
     """
     try:
         path, lab = _resolve_topology(topologyPath)
+        params = _lifecycle_params(path, maxWorkers, nodeFilter, timeout)
     except (ValueError, OSError) as e:
         return f"ERROR: {e}"
-    params = {"path": path}
     if reconfigure:
         params["reconfigure"] = "true"
-    client._ensure_auth()
-    resp = client.session.post(
-        f"{client.base_url}/api/v1/labs/{lab}/deploy",
-        headers={"Authorization": f"Bearer {client.token}"},
-        params=params,
-        timeout=900,
-    )
+    resp = _post_lifecycle(lab, "deploy", params, timeout)
     return _result(resp, f"deploy lab {lab!r} from {path}")
 
+
+@mcp.tool()
+def applyLabFile(topologyPath: str, dryRun: bool = False,
+                 maxWorkers: Optional[int] = None, timeout: Optional[str] = None) -> str:
+    """Apply a topology file to a lab, like `containerlab apply`.
+
+    If the lab isn't running, it's deployed. If it is, supported changes
+    (such as added nodes and links) are made in place, without restarting
+    the nodes that are unchanged: useful for adding nodes to a lab with
+    slow-booting vJunos routers. Use dryRun=true first to see the planned
+    changes without applying them.
+    topologyPath, maxWorkers and timeout work as in deployLabFile.
+    """
+    try:
+        path, lab = _resolve_topology(topologyPath)
+        params = _lifecycle_params(path, maxWorkers, None, timeout)
+    except (ValueError, OSError) as e:
+        return f"ERROR: {e}"
+    if dryRun:
+        params["dryRun"] = "true"
+    resp = _post_lifecycle(lab, "apply", params, timeout)
+    return _result(resp, f"apply {path} to lab {lab!r}")
 
 @mcp.tool()
 def inspectLab(labName: str, details: bool = False) -> str:
