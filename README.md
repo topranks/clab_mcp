@@ -2,7 +2,7 @@
 
 Basic MCP implementation to interact with the containerlab api
 
-This is just for me to learn about MCP, and to tailer how to interact with 
+This is just for me to learn about MCP, and to practice how to interact with 
 APIs etc from an agent.  It is mostly based on Sean Mahoney's MCP server which 
 is much more polished, users looking for an MCP server to interact with the 
 containerlab API should use that instead:
