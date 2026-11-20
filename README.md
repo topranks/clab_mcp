@@ -3,14 +3,12 @@
 Basic MCP implementation to interact with the containerlab api
 
 This is just for me to learn about MCP, and to tailer how to interact with 
-APIs etc from an agent.
-
-There are much more polished versions available such as this:
+APIs etc from an agent.  It is mostly based on the below MCP server which 
+is much more polished, users looking for an MCP server for containerlab 
+should use his, this is more a backup of my tinkering for my own reference:
 
 https://github.com/seanerama/clab-mcp-server
 
-
-This is mostly just a backup for my own referencce.
 
 # set up the venv:
 '''
