@@ -47,11 +47,11 @@ Exposes `svm` for nesting and the invariant TSC (`constant_tsc`, `nonstop_tsc`).
 <cpu mode='host-passthrough' check='none' migratable='off'/>
 ```
 
-### 5. vCPUs below the host's thread count
+### 6. Memballoon & freePageReporting
 
-14 vCPUs on a 16-thread host, leaving room for the host itself.
+This means the hypervisor host does not allocate more memory for the VM than what it is actually using, or thereabouts.
 
-### 6. Memory that returns to the host
+It enables us to set a high maximum memory for when we need it, without locking up that amount of RAM the entire time.
 
 Maximum and current memory set to the same value, with free page reporting on the balloon device (inside `<devices>`; modify the existing `<memballoon>` entry if there is one, keeping its `<address>` line):
 
@@ -99,7 +99,13 @@ echo 0 | sudo tee /sys/module/kvm/parameters/halt_poll_ns
 
 ### 10. Periodic page cache reclaim
 
-Lets freed memory flow back to the host via free page reporting.
+Normally Linux will try to use all free memory it can for page and file cache, thinking it may as well.
+
+With the freePageReporting enabled for the VM the hypervisor only needs assign however much RAM the VM
+is actually using, however if the VM decides to fill it to its max for caching it defeats the point.
+
+We create a systemd unit to write '1' to /proc/sys/vm/drop_caches every few minutes to drop the existing
+memory caches, which keeps the cache on the host low. 
 
 `/usr/local/sbin/reclaim-cache` (mode 755):
 
