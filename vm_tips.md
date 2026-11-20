@@ -178,6 +178,11 @@ Each is roughly 4KB mem saved.
 
 ### 12. Pass the invariant TSC into vJunos
 
+Modern systems have an _invariant_ "Time Stamp Counter" that increases steadily over time, regardless of what speed the
+CPU might be operating at / changing.  Older systems the TSC could be unreliable due to speed changes etc., so there is 
+a CPU flag to expose to say "this system has an invariant TSC".  We need to expose this to the nested Juniper VMs so they
+use it and qemu doesn't try to emulate it or some nonsense.
+
 The vJunos containers run the Junipe VM images, which in turn run a VM inside (I assume they are linux and run the BSD vmhost same as a real Juniper)
 
 This 3-layers deep nested virtualisation is quite horrible, but we can make it work:
