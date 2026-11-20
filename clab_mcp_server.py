@@ -55,6 +55,7 @@ MCP_PORT = int(os.getenv("MCP_PORT", "9000"))
 
 WORKSPACE = os.path.realpath(os.getenv("CLAB_WORKSPACE", "/home/cathal/agent_wd"))
 TOPO_NAME_RE = re.compile(r"^name:\s*['\"]?([A-Za-z0-9][A-Za-z0-9_-]{0,62})['\"]?\s*(?:#.*)?$", re.M)
+DURATION_RE = re.compile(r"^[0-9]+(s|m|h)$")
 
 if not API_USERNAME or not API_PASSWORD:
     sys.exit("CLAB_API_USERNAME and CLAB_API_PASSWORD must be set")
