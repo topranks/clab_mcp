@@ -26,34 +26,14 @@ echo 'options kvm halt_poll_ns=0' | sudo tee /etc/modprobe.d/kvm-halt-poll.conf
 echo 0 | sudo tee /sys/module/kvm/parameters/halt_poll_ns    # apply now
 ```
 
-### 3. Firewall rules for the VM
+This helps at every layer - on the hypervisor host running the VM, and on the VM running
+the vrnetlab VMs with nested virtualisation.
 
-With a default-drop nftables input policy, allow DHCP and DNS from `virbr0` (note `udp dport`, not `tcp dport`), plus service ports used by the VM (11434 for Ollama, 8086 for the proxy):
+It could possibly even help with the third layer of virtualisation when running the Juniper
+BSD VM inside the Juniper vmhost bit... but I didn't go messing with that layer.
 
-```
-set VIRBR_PORTS {
-        type inet_service
-        flags interval
-        elements = { 8086, 11434, 53 }
-}
+It definitely reduced CPU usage substantially.  Same number of active cores, less busy.
 
-set VIRBR_UDP {
-        type inet_service
-        flags interval
-        elements = { 53, 67 }
-}
-
-iifname "virbr0" tcp dport @VIRBR_PORTS accept
-iifname "virbr0" udp dport @VIRBR_UDP accept
-```
-
-Pin the VM's address with a DHCP reservation so per-IP rules stay valid:
-
-```bash
-virsh domiflist <vm>     # get the VM's MAC
-virsh net-update default add ip-dhcp-host \
-  "<host mac='52:54:00:xx:xx:xx' ip='192.168.122.x'/>" --live --config
-```
 
 ## VM definition
 
@@ -172,17 +152,28 @@ sudo systemctl enable --now reclaim-cache.timer
 systemctl list-timers reclaim-cache.timer
 ```
 
-### 11. KSM (optional)
+### 11. Enable Kernel Samepage Merging (KSM)
 
-Saves memory when running several identical vJunos nodes:
+This is a linux optimisation to find memory pages with idential contents and de-dupe them.
 
 ```bash
-echo 1 | sudo tee /sys/kernel/mm/ksm/run
+echo 'w /sys/kernel/mm/ksm/run - - - - 1' | sudo tee /etc/tmpfiles.d/ksm.conf
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/ksm.conf     # apply now, without rebooting
+cat /sys/kernel/mm/ksm/run                                  # should show 1
 ```
 
-## Containerlab and vJunos
+Not sure how much it helps, you can assess by running:
+```
+grep . /sys/kernel/mm/ksm/pages_sharing /sys/kernel/mm/ksm/pages_shared
+```
+
+Each is roughly 4KB mem saved.
 
 ### 12. Pass the invariant TSC into vJunos
+
+The vJunos containers run the Junipe VM images, which in turn run a VM inside (I assume they are linux and run the BSD vmhost same as a real Juniper)
+
+This 3-layers deep nested virtualisation is quite horrible, but we can make it work:
 
 QEMU's `-cpu host` also strips the invariant TSC by default, so the vJunos Linux layer and its PFE lose their reliable clock. Set it once per kind, inside `topology:`:
 
@@ -203,30 +194,3 @@ ps -eo args | grep '[q]emu-system' | grep -oE -- '-cpu [^ ]+'    # -cpu host,+in
 
 Do the same for any other vrnetlab kinds in use, e.g. `juniper_vjunosswitch`.
 
-### 13. Leave vJunos at 4 vCPUs and ~5 GB RAM
-
-Don't lower `QEMU_SMP`: the PFE's DPDK engine needs its cores.
-
-### 14. At least one data link per vJunos node
-
-Without a data interface the FPC stays at `Present` forever. This includes single-node tests (`--node-filter` also drops links to filtered-out nodes). Verify with:
-
-```
-show chassis fpc            # FPC 0 Online
-show interfaces terse ge-0/0/*
-```
-
-### 15. Build vJunos images with current vrnetlab
-
-April 2026 or later: the build patches vJunos's Intel-only nested-virtualisation check (`vmx`) so it works on AMD (`svm`).
-
-### 16. Habits
-
-- Don't `docker restart` lab nodes: they lose their links. Recreate with containerlab instead.
-- Destroy with `--cleanup` when a startup config needs reapplying (containerlab doesn't overwrite an existing node config directory).
-- Add `clab-*/` to each lab repo's `.gitignore`.
-- vJunos CLI is reached by SSH to the management IP (`admin` / `admin@123` by default); the port 5000 console is the vJunos Linux layer, not Junos.
-
-## Not done, possible later
-
-Setting `halt_poll_ns=0` inside the vJunos image's own Linux layer (which runs KVM for the Junos control plane), by modifying the qcow2, if CPU becomes the limit with larger Juniper labs.
