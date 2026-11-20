@@ -21,6 +21,8 @@ Environment:
   CLAB_API_PASSWORD     required
   MCP_HOST / MCP_PORT   default 127.0.0.1 / 9000
   CLAB_WORKSPACE        default /home/cathal/agent_wd
+
+Largely written by claude with some input / minor changes by me.
 """
 
 import json
